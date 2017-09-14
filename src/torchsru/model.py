@@ -182,12 +182,15 @@ class SRUCell(nn.Module):
         self.bias = nn.Parameter(torch.Tensor(
             n_out * 4 if bidirectional else n_out * 2
         ))
-        self.init_weight()
+        self.reset_parameters()
 
-    def init_weight(self):
+    def reset_parameters(self):
         val_range = (3.0 / self.n_in) ** 0.5
         self.weight.data.uniform_(-val_range, val_range)
         self.bias.data.zero_()
+
+    def init_weight(self):
+        return self.reset_parameters()
 
     def set_bias(self, bias_val=0):
         n_out = self.n_out
@@ -271,9 +274,9 @@ class SRU(nn.Module):
         for l in self.rnn_lst:
             l.set_bias(bias_val)
 
-    def init_weight(self):
+    def reset_parameters(self):
         for rnn in self.rnn_lst:
-            rnn.init_weight()
+            rnn.reset_parameters()
 
     def forward(self, input, c0=None, return_hidden=True):
         packed = isinstance(input, R.PackedSequence)
