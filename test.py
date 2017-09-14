@@ -8,7 +8,10 @@ from torchsru import SRU
 
 def test():
     batch_first = False
-    sru = SRU(4, 4, batch_first=batch_first, bidirectional=True).cuda()
+    sru = SRU(4, 4,
+              batch_first=batch_first,
+              bidirectional=True,
+              use_sigmoid=False).cuda()
     sru.reset_parameters()
     x = Variable(torch.randn(3, 2, 4)).cuda()
     lens = [3, 3]

@@ -3,6 +3,14 @@ extern "C" {
     {
         return 1.f / (1.f + expf(-x));
     }
+
+    __forceinline__ __device__ float seluf(float x)
+    {
+        float alpha = 1.6732632423543772848170429916717;
+        float scale = 1.0507009873554804934193349852946;
+        return scale * ((x >= 0.0) ? x : alpha * (expf(x) - 1));
+    }
+
     __global__ void sru_fwd(const float* __restrict__ u,
         const float* __restrict__ x,
         const float* __restrict__ bias,
@@ -15,7 +23,8 @@ extern "C" {
         const int k,
         float* __restrict__ h,
         float* __restrict__ c,
-        const int use_tanh)
+        const int use_tanh,
+        const int use_sigmoid)
     {
         assert((k == 3) || (x == NULL));
         int ncols = batch * d;
@@ -35,11 +44,13 @@ extern "C" {
         float* cp = c + col;
         float* hp = h + col;
         for (int row = 0; row < len; ++row) {
-            float g1 = sigmoidf((*(up + 1)) + bias1);
-            float g2 = sigmoidf((*(up + 2)) + bias2);
+            float g1_ = *(up + 1) + bias1;
+            float g2_ = *(up + 2) + bias2;
+            const float g1 = use_sigmoid ? sigmoidf(g1_) : seluf(g1_);
+            const float g2 = use_sigmoid ? sigmoidf(g2_) : seluf(g2_);
             cur = (cur - (*up)) * g1 + (*up);
             *cp = cur;
-            float val = use_tanh ? tanh(cur) : cur;
+            float val = use_tanh ? tanhf(cur) : cur;
             *hp = (val * mask - (*xp)) * g2 + (*xp);
             up += ncols_u;
             xp += ncols_x;
@@ -64,7 +75,8 @@ extern "C" {
         float* __restrict__ grad_x,
         float* __restrict__ grad_bias,
         float* __restrict__ grad_init,
-        int use_tanh)
+        const int use_tanh,
+        const int use_sigmoid)
     {
         assert((k == 3) || (x == NULL));
         assert((k == 3) || (grad_x == NULL));
@@ -89,9 +101,11 @@ extern "C" {
         float* gup = grad_u + (col * k) + (len - 1) * ncols_u;
         float* gxp = (k == 3) ? (grad_x + col + (len - 1) * ncols) : (gup + 3);
         for (int row = len - 1; row >= 0; --row) {
-            const float g1 = sigmoidf((*(up + 1)) + bias1);
-            const float g2 = sigmoidf((*(up + 2)) + bias2);
-            const float c_val = use_tanh ? tanh(*cp) : (*cp);
+            float g1_ = *(up + 1) + bias1;
+            float g2_ = *(up + 2) + bias2;
+            const float g1 = use_sigmoid ? sigmoidf(g1_) : seluf(g1_);
+            const float g2 = use_sigmoid ? sigmoidf(g2_) : seluf(g2_);
+            const float c_val = use_tanh ? tanhf(*cp) : (*cp);
             const float x_val = *xp;
             const float u_val = *up;
             const float prev_c_val = (row > 0) ? (*(cp - ncols)) : (*(init + col));
@@ -138,7 +152,8 @@ extern "C" {
         const int k,
         float* __restrict__ h,
         float* __restrict__ c,
-        const int use_tanh)
+        const int use_tanh,
+        const int use_sigmoid)
     {
         assert((k == 3) || (x == NULL));
         assert((k == 3) || (k == 4));
@@ -170,11 +185,13 @@ extern "C" {
         int ncols_x_ = flip ? -ncols_x : ncols_x;
         int ncols_ = flip ? -ncols : ncols;
         for (int cnt = 0; cnt < len; ++cnt) {
-            float g1 = sigmoidf((*(up + 1)) + bias1);
-            float g2 = sigmoidf((*(up + 2)) + bias2);
+            float g1_ = *(up + 1) + bias1;
+            float g2_ = *(up + 2) + bias2;
+            const float g1 = use_sigmoid ? sigmoidf(g1_) : seluf(g1_);
+            const float g2 = use_sigmoid ? sigmoidf(g2_) : seluf(g2_);
             cur = (cur - (*up)) * g1 + (*up);
             *cp = cur;
-            float val = use_tanh ? tanh(cur) : cur;
+            float val = use_tanh ? tanhf(cur) : cur;
             *hp = (val * mask - (*xp)) * g2 + (*xp);
             up += ncols_u_;
             xp += ncols_x_;
@@ -199,7 +216,8 @@ extern "C" {
         float* __restrict__ grad_x,
         float* __restrict__ grad_bias,
         float* __restrict__ grad_init,
-        int use_tanh)
+        const int use_tanh,
+        const int use_sigmoid)
     {
         assert((k == 3) || (x == NULL));
         assert((k == 3) || (grad_x == NULL));
@@ -238,9 +256,11 @@ extern "C" {
         int ncols_x_ = flip ? -ncols_x : ncols_x;
         int ncols_ = flip ? -ncols : ncols;
         for (int cnt = 0; cnt < len; ++cnt) {
-            const float g1 = sigmoidf((*(up + 1)) + bias1);
-            const float g2 = sigmoidf((*(up + 2)) + bias2);
-            const float c_val = use_tanh ? tanh(*cp) : (*cp);
+            float g1_ = *(up + 1) + bias1;
+            float g2_ = *(up + 2) + bias2;
+            const float g1 = use_sigmoid ? sigmoidf(g1_) : seluf(g1_);
+            const float g2 = use_sigmoid ? sigmoidf(g2_) : seluf(g2_);
+            const float c_val = use_tanh ? tanhf(*cp) : (*cp);
             const float x_val = *xp;
             const float u_val = *up;
             const float prev_c_val = (cnt < len - 1) ? (*(cp - ncols_)) : (*(init + col));

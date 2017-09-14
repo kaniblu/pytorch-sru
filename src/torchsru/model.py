@@ -21,13 +21,14 @@ class SRU_Compute(Function):
     SRU_BiBWD_FUNC = None
     SRU_STREAM = None
 
-    def __init__(self, use_tanh, d_out, bidirectional=False):
+    def __init__(self, use_tanh, d_out, bidirectional=False, use_sigmoid=True):
         global SRU_CUDA_INITIALIZED
 
         super(SRU_Compute, self).__init__()
         self.use_tanh = use_tanh
         self.d_out = d_out
         self.bidirectional = bidirectional
+        self.use_sigmoid = use_sigmoid
 
         if not self.SRU_CUDA_INITIALIZED:
             self.initialize()
@@ -83,7 +84,8 @@ class SRU_Compute(Function):
             k_,
             h.data_ptr(),
             c.data_ptr(),
-            self.use_tanh],
+            self.use_tanh,
+            self.use_sigmoid],
             block=(thread_per_block, 1, 1),
             grid=(num_block, 1, 1),
             stream=self.SRU_STREAM
@@ -153,7 +155,8 @@ class SRU_Compute(Function):
             grad_x.data_ptr() if k_ == 3 else 0,
             grad_bias.data_ptr(),
             grad_init.data_ptr(),
-            self.use_tanh],
+            self.use_tanh,
+            self.use_sigmoid],
             block=(thread_per_block, 1, 1),
             grid=(num_block, 1, 1),
             stream=self.SRU_STREAM
@@ -162,7 +165,7 @@ class SRU_Compute(Function):
 
 
 class SRUCell(nn.Module):
-    def __init__(self, n_in, n_out, dropout=0, rnn_dropout=0,
+    def __init__(self, n_in, n_out, dropout=0, rnn_dropout=0, use_sigmoid=1,
                  use_tanh=1, bidirectional=False):
         super(SRUCell, self).__init__()
         self.n_in = n_in
@@ -171,6 +174,7 @@ class SRUCell(nn.Module):
         self.dropout = dropout
         self.bidirectional = bidirectional
         self.use_tanh = use_tanh
+        self.use_sigmoid = use_sigmoid
 
         out_size = n_out * 2 if bidirectional else n_out
         k = 4 if n_in != out_size else 3
@@ -226,7 +230,8 @@ class SRUCell(nn.Module):
         if lens is None:
             lens = Variable(x.data.new(batch).int().fill_(max_len))
 
-        computer = SRU_Compute(self.use_tanh, n_out, self.bidirectional)
+        computer = SRU_Compute(self.use_tanh, n_out, self.bidirectional,
+                               use_sigmoid=self.use_sigmoid)
 
         if self.training and (self.dropout > 0):
             bidir = 2 if self.bidirectional else 1
@@ -246,7 +251,7 @@ class SRUCell(nn.Module):
 
 class SRU(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers=2, dropout=0,
-                 rnn_dropout=0, batch_first=True,
+                 rnn_dropout=0, batch_first=True, use_sigmoid=1,
                  use_tanh=1, bidirectional=False):
         super(SRU, self).__init__()
         self.n_in = input_size
@@ -266,6 +271,7 @@ class SRU(nn.Module):
                 dropout=dropout if i + 1 != num_layers else 0,
                 rnn_dropout=rnn_dropout,
                 use_tanh=use_tanh,
+                use_sigmoid=use_sigmoid,
                 bidirectional=bidirectional
             )
             self.rnn_lst.append(l)
