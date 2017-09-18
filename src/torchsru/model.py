@@ -19,7 +19,7 @@ class SRU_Compute(Function):
     SRU_BWD_FUNC = None
     SRU_BiFWD_FUNC = None
     SRU_BiBWD_FUNC = None
-    SRU_STREAM = None
+    SRU_STREAM = {}
 
     def __init__(self, use_tanh, d_out, bidirectional=False, use_sigmoid=True):
         global SRU_CUDA_INITIALIZED
@@ -46,11 +46,17 @@ class SRU_Compute(Function):
         cls.SRU_BWD_FUNC = mod.get_function('sru_bwd')
         cls.SRU_BiFWD_FUNC = mod.get_function('sru_bi_fwd')
         cls.SRU_BiBWD_FUNC = mod.get_function('sru_bi_bwd')
-
-        Stream = namedtuple('Stream', ['ptr'])
-        cls.SRU_STREAM = Stream(ptr=torch.cuda.current_stream().cuda_stream)
-
         cls.SRU_CUDA_INITIALIZED = True
+
+    def get_stream(self):
+        device_id = self.
+
+        if device_id not in cls.SRU_STREAM:
+            Stream = namedtuple('Stream', ['ptr'])
+            stream = Stream(ptr=torch.cuda.c.cuda_stream)
+            cls.SRU_STREAM[device_id] = stream
+
+        return cls.SRU_STREAM.get(device_id)
 
     def forward(self, u, x, bias, lens, init=None, mask_h=None):
         bidir = 2 if self.bidirectional else 1
@@ -71,6 +77,7 @@ class SRU_Compute(Function):
         h = x.new(*size)
 
         FUNC = self.SRU_FWD_FUNC if not self.bidirectional else self.SRU_BiFWD_FUNC
+        stream = self.get_stream()
         FUNC(args=[
             u.contiguous().data_ptr(),
             x.contiguous().data_ptr() if k_ == 3 else 0,
@@ -88,7 +95,7 @@ class SRU_Compute(Function):
             self.use_sigmoid],
             block=(thread_per_block, 1, 1),
             grid=(num_block, 1, 1),
-            stream=self.SRU_STREAM
+            stream=stream
         )
 
         self.save_for_backward(u, x, bias, init, mask_h)
@@ -137,6 +144,7 @@ class SRU_Compute(Function):
         grad_x = x.new(*x.size()) if k_ == 3 else None
 
         FUNC = self.SRU_BWD_FUNC if not self.bidirectional else self.SRU_BiBWD_FUNC
+        stream = self.get_stream()
         FUNC(args=[
             u.contiguous().data_ptr(),
             x.contiguous().data_ptr() if k_ == 3 else 0,
@@ -159,7 +167,7 @@ class SRU_Compute(Function):
             self.use_sigmoid],
             block=(thread_per_block, 1, 1),
             grid=(num_block, 1, 1),
-            stream=self.SRU_STREAM
+            stream=stream
         )
         return grad_u, grad_x, grad_bias.sum(1).view(-1), grad_init, None
 
